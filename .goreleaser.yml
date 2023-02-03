@@ -20,6 +20,22 @@ builds:
       - -trimpath
     ldflags:
       - -s -w
+  - id: darwin-arm64
+    main: ./cmd/clef
+    binary: bee-clef
+    dir: go-ethereum
+    goos:
+      - darwin
+    goarch:
+      - arm64
+    env:
+      - CC=oa64-clang
+      - CXX=oa64-clang++
+    flags:
+      - -v
+      - -trimpath
+    ldflags:
+      - -s -w
   - id: linux-arm64
     binary: bee-clef
     main: ./cmd/clef
@@ -91,14 +107,28 @@ archives:
 
     format: binary
   -
-    id: homebrew
+    id: homebrew-amd64
     builds:
     - darwin-amd64
     name_template: "{{ tolower .ProjectName }}-{{ tolower .Os }}-{{ tolower .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
     files:
-    - packaging/homebrew/swarm-clef
-    - packaging/homebrew/swarm-clef-init
-    - packaging/homebrew/swarm-clef-keys
+    - src: 'packaging/homebrew-amd64/*'
+      dst: '.'
+      strip_parent: true
+    - packaging/4byte.json
+    - packaging/rules.js
+    - packaging/default
+    - LICENSE
+    - README.md
+  -
+    id: homebrew-arm64
+    builds:
+    - darwin-arm64
+    name_template: "{{ tolower .ProjectName }}-{{ tolower .Os }}-{{ tolower .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+    files:
+    - src: 'packaging/homebrew-arm64/*'
+      dst: '.'
+      strip_parent: true
     - packaging/4byte.json
     - packaging/rules.js
     - packaging/default
@@ -106,7 +136,9 @@ archives:
     - README.md
 
 nfpms:
-  - file_name_template: "{{ tolower .ProjectName }}_{{ tolower .Version }}_{{ tolower .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+  - file_name_template: "{{ tolower .ProjectName }}_{{ tolower .Version }}_{{ tolower .Arch }}"
+
+    id: packages
 
     vendor: Ethereum Swarm
     homepage: https://swarm.ethereum.org/
@@ -140,12 +172,18 @@ nfpms:
 
     overrides:
       deb:
+        replacements:
+          arm: armhf
         scripts:
           preinstall: ./packaging/deb/preinst
           postinstall: ./packaging/deb/postinst
           preremove: ./packaging/deb/prerm
           postremove: ./packaging/deb/postrm
       rpm:
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        file_name_template: "{{ tolower .ProjectName }}-{{ tolower .Version }}.{{ tolower .Arch }}"
         scripts:
           preinstall: ./packaging/rpm/pre
           postinstall: ./packaging/rpm/post
@@ -154,6 +192,13 @@ nfpms:
 
     bindir: /usr/bin
 
+publishers:
+  - name: gemfury
+    ids:
+      - packages
+    dir: "{{ dir .ArtifactPath }}"
+    cmd: bash -c "if [[ \"{{ .Prerelease }}\" == \"\" ]]; then curl -F package=@{{ .ArtifactName }} https://{{ .Env.GEMFURY_TOKEN }}@push.fury.io/ethersphere/; else echo SKIPPING PRERELEASE!; fi"
+
 brews:
   - name: swarm-clef
     tap:
@@ -161,7 +206,8 @@ brews:
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_PAT }}"
     ids:
-      - homebrew
+      - homebrew-amd64
+      - homebrew-arm64
     commit_author:
       name: bee-worker
       email: bee-worker@ethswarm.org
@@ -174,7 +220,7 @@ brews:
     install: |
       (etc/"swarm-clef").mkpath
       (var/"lib/swarm-clef").mkpath
-      bin.install ["bee-clef", "packaging/homebrew/swarm-clef", "packaging/homebrew/swarm-clef-init", "packaging/homebrew/swarm-clef-keys"]
+      bin.install ["bee-clef", "swarm-clef", "swarm-clef-init", "swarm-clef-keys"]
       etc.install "packaging/default" => "swarm-clef/default" unless File.exists? etc/"swarm-clef/default"
       etc.install "packaging/4byte.json" => "swarm-clef/4byte.json" unless File.exists? etc/"swarm-clef/4byte.json"
       etc.install "packaging/rules.js" => "swarm-clef/rules.js" unless File.exists? etc/"swarm-clef/rules.js"
@@ -199,8 +245,6 @@ brews:
         </array>
         <key>RunAtLoad</key>
         <true/>
-        <key>WorkingDirectory</key>
-        <string>/usr/local</string>
         <key>StandardOutPath</key>
         <string>#{var}/log/swarm-clef/swarm-clef.log</string>
         <key>StandardErrorPath</key>
@@ -211,7 +255,8 @@ brews:
 dockers:
 - image_templates:
   - "ethersphere/clef:{{ .Version }}-amd64"
-  use_buildx: true
+  - "quay.io/ethersphere/clef:{{ .Version }}-amd64"
+  use: buildx
   ids:
     - linux-amd64
   goarch: amd64
@@ -229,7 +274,8 @@ dockers:
     - packaging/docker/entrypoint.sh
 - image_templates:
   - "ethersphere/clef:{{ .Version }}-armv7"
-  use_buildx: true
+  - "quay.io/ethersphere/clef:{{ .Version }}-armv7"
+  use: buildx
   ids:
     - linux-armv7
   goarch: arm
@@ -248,7 +294,8 @@ dockers:
     - packaging/docker/entrypoint.sh
 - image_templates:
   - "ethersphere/clef:{{ .Version }}-arm64v8"
-  use_buildx: true
+  - "quay.io/ethersphere/clef:{{ .Version }}-arm64v8"
+  use: buildx
   ids:
     - linux-arm64
   goarch: arm64
@@ -292,4 +339,32 @@ docker_manifests:
   - ethersphere/clef:{{ .Version }}-amd64
   - ethersphere/clef:{{ .Version }}-armv7
   - ethersphere/clef:{{ .Version }}-arm64v8
+  skip_push: auto
+- name_template: quay.io/ethersphere/clef:{{ .Major }}
+  image_templates:
+  - quay.io/ethersphere/clef:{{ .Version }}-amd64
+  - quay.io/ethersphere/clef:{{ .Version }}-armv7
+  - quay.io/ethersphere/clef:{{ .Version }}-arm64v8
+  skip_push: auto
+- name_template: quay.io/ethersphere/clef:{{ .Major }}.{{ .Minor }}
+  image_templates:
+  - quay.io/ethersphere/clef:{{ .Version }}-amd64
+  - quay.io/ethersphere/clef:{{ .Version }}-armv7
+  - quay.io/ethersphere/clef:{{ .Version }}-arm64v8
+  skip_push: auto
+- name_template: quay.io/ethersphere/clef:{{ .Major }}.{{ .Minor }}.{{ .Patch }}{{ with .Prerelease }}-{{ . }}{{ end }}
+  image_templates:
+  - quay.io/ethersphere/clef:{{ .Version }}-amd64
+  - quay.io/ethersphere/clef:{{ .Version }}-armv7
+  - quay.io/ethersphere/clef:{{ .Version }}-arm64v8
+- name_template: quay.io/ethersphere/clef:latest
+  image_templates:
+  - quay.io/ethersphere/clef:{{ .Version }}-amd64
+  - quay.io/ethersphere/clef:{{ .Version }}-armv7
+  - quay.io/ethersphere/clef:{{ .Version }}-arm64v8
+- name_template: quay.io/ethersphere/clef:beta
+  image_templates:
+  - quay.io/ethersphere/clef:{{ .Version }}-amd64
+  - quay.io/ethersphere/clef:{{ .Version }}-armv7
+  - quay.io/ethersphere/clef:{{ .Version }}-arm64v8
   skip_push: auto

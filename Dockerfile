@@ -1,6 +1,6 @@
-FROM golang:1.16.7 as build
+FROM golang:1.19 as build
 
-ARG TAG="v1.10.8"
+ARG TAG="v1.10.26"
 
 RUN apt-get update && apt-get install -y \
     make \
@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
 RUN git clone https://github.com/ethereum/go-ethereum.git && cd /go/go-ethereum && \
     if [[ -n $TAG ]]; then git checkout $TAG; fi && env GO111MODULE=on go run build/ci.go install ./cmd/clef
 
-FROM debian:10.10-slim as runtime
+FROM debian:11.6-slim as runtime
 
 RUN mkdir -p /app/data && chown nobody:nogroup /app/data
 
